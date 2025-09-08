@@ -9,6 +9,7 @@ class NewsItemDTO:
     published_at: datetime
     title: str
     content: str
+    source: str
 
 class NewsFeedPort(Protocol):
     def fetch(self, categories: List[str] = [], until: datetime | None = None) -> Iterable[NewsItemDTO]: ...

@@ -25,5 +25,6 @@ class CoinDeskClient(NewsFeedPort):
                 external_url=item["URL"],
                 published_at=datetime.fromtimestamp(item["PUBLISHED_ON"], tz=timezone.utc),
                 title=item["TITLE"],
-                content=item["BODY"]
+                content=item["BODY"],
+                source="coindesk"
             )
