@@ -10,8 +10,8 @@ class CoinDeskClient(NewsFeedPort):
         self.api_key = api_key
         self.base_url = base_url
 
-    def fetch(self, categories: List[str] = [], until: datetime | None = None) -> Iterable[NewsItemDTO]:
-        params = {"lang":"EN", "limit":10, "api_key":self.api_key}
+    def fetch(self,limit:int = 10, categories: List[str] = [], until: datetime | None = None) -> Iterable[NewsItemDTO]:
+        params = {"lang":"EN", "limit":limit, "api_key":self.api_key}
         if until:
             params["to_ts"] = snap_to_interval(dt=until).timestamp()
         else:
