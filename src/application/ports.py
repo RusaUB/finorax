@@ -6,7 +6,7 @@ from datetime import datetime
 class NewsItemDTO:
     external_id: str
     external_url: str
-    published_on: datetime
+    published_at: datetime
     title: str
     content: str
 

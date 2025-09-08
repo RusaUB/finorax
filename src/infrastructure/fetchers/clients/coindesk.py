@@ -23,7 +23,7 @@ class CoinDeskClient(NewsFeedPort):
             yield NewsItemDTO(
                 external_id=item["ID"],
                 external_url=item["URL"],
-                published_on=datetime.fromtimestamp(item["PUBLISHED_ON"], tz=timezone.utc),
+                published_at=datetime.fromtimestamp(item["PUBLISHED_ON"], tz=timezone.utc),
                 title=item["TITLE"],
                 content=item["BODY"]
             )
