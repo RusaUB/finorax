@@ -26,5 +26,6 @@ class CoinDeskClient(NewsFeedPort):
                 published_at=datetime.fromtimestamp(item["PUBLISHED_ON"], tz=timezone.utc),
                 title=item["TITLE"],
                 content=item["BODY"],
+                categories=[i["CATEGORY"] for i in item["CATEGORY_DATA"]],
                 source="coindesk"
             )

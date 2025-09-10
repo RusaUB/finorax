@@ -18,6 +18,7 @@ class IngestEvents:
                 source=dto.source,
                 published_at=dto.published_at,
                 title=dto.title,
+                categories=dto.categories,
                 content=dto.content,
             ))
         return self.events.upsert_many(events=to_upsert)

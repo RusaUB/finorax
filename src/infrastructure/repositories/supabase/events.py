@@ -47,5 +47,6 @@ class SupabaseEventRepository(EventRepository):
             "occurred_at":  e.occurred_at.isoformat(),
             "title":        e.title,
             "content":      e.content,
+            "categories":   e.categories,
             "updated_at":   datetime.now(timezone.utc).isoformat()
         }
