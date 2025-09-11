@@ -46,6 +46,23 @@ class SupabaseAgentRepository(AgentRepository):
             return None
         return self._fetch_profile(key)
 
+    def get_agent_categories(self, agent_id: str) -> List[str]:
+        """Return the agent's coverage categories (normalized).
+        Reads the agent's coverage_profile_key and fetches categories from coverage_profiles.
+        """
+        res = self.sb.table(self.agent_table).select("coverage_profile_key").eq("agent_id", agent_id).execute()
+        rows = res.data or []
+        if not rows:
+            return []
+        key = rows[0].get("coverage_profile_key")
+        if not key:
+            return []
+        prof = self._fetch_profile(key)
+        if not prof:
+            return []
+        # _profile_from_row already normalizes categories to UPPER+trim
+        return list(prof.categories or [])
+
     def get_agent_events(
         self,
         agent_id: str,
