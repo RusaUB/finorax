@@ -46,7 +46,7 @@ class SupabaseEventRepository(EventRepository):
 
     def upsert_many(self, events: List[Event]) -> UpsertResult:
         if not events:
-            return UpsertResult(inserted=0, updated=0)
+            return UpsertResult(inserted=0, updated=0, events=[])
 
         rows = [self._row_from_event(e) for e in events]
         ids  = [r["event_id"] for r in rows]
