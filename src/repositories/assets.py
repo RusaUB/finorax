@@ -1,0 +1,6 @@
+from typing import Protocol, Set
+from src.domain.assets import Asset
+
+class AssetRepository(Protocol):
+    def get_asset(self, symbol: str) -> Asset: ...
+    def list_symbols(self) -> Set[str]: ...
