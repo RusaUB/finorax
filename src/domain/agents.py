@@ -1,12 +1,10 @@
-from typing import List
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class CoverageProfile:
     profile_key: str
     name: str
-    description: str = ""
-    categories: List[str] = field(default_factory=list)
+    role: str = ""
 
 @dataclass(frozen=True)
 class Agent:
