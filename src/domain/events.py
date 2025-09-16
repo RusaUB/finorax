@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Optional
+
+from src.domain.assets import Asset
 
 @dataclass(frozen=True)
 class Event:
@@ -9,6 +11,7 @@ class Event:
     title: str
     content: str
     categories: List[str]
+    asset: Optional[Asset] = None
 
     @staticmethod
     def from_dto(external_id: str, published_at: datetime,  categories: list[str], title: str, content: str, source: str)->"Event":
@@ -22,5 +25,6 @@ class Event:
             occurred_at=published_at,
             title=t,
             content=(content or "").strip(),
-            categories=categories
+            categories=categories,
+            asset=None,
         )
