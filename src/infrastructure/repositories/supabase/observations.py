@@ -1,0 +1,64 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
+from supabase import Client
+
+from src.domain.observations import Observation
+from src.repositories.observations import ObservationRepository, ObservationUpsertResult
+
+
+class SupabaseObservationRepository(ObservationRepository):
+    def __init__(self, sb_client: Client, table: str = "observations") -> None:
+        self.sb = sb_client
+        self.table = table
+
+    def upsert_many(self, observations: List[Observation]) -> ObservationUpsertResult:
+        if not observations:
+            return ObservationUpsertResult(inserted=0, updated=0, observations=[])
+
+        rows = [self._row_from_obs(o) for o in observations]
+
+        agent_ids = list({r["agent_id"] for r in rows})
+        event_ids = list({r["event_id"] for r in rows})
+
+        existing = (
+            self.sb
+            .table(self.table)
+            .select("agent_id, event_id, asset_symbol")
+            .in_("agent_id", agent_ids)
+            .in_("event_id", event_ids)
+            .execute()
+        )
+        existing_keys: set[Tuple[str, str, Optional[str]]] = set()
+        for r in (existing.data or []):
+            existing_keys.add((r.get("agent_id"), r.get("event_id"), r.get("asset_symbol")))
+
+        def key_of(row: Dict[str, Any]) -> Tuple[str, str, Optional[str]]:
+            return (row["agent_id"], row["event_id"], row.get("asset_symbol"))
+
+        new_rows = [r for r in rows if key_of(r) not in existing_keys]
+        update_rows = [r for r in rows if key_of(r) in existing_keys]
+
+        inserted = len(new_rows)
+        updated = len(update_rows)
+
+        if new_rows:
+            self.sb.table(self.table).insert(new_rows).execute()
+        if update_rows:
+            # Composite conflict target: ensure a unique constraint exists on (agent_id, event_id, asset_symbol)
+            self.sb.table(self.table).upsert(update_rows, on_conflict="agent_id,event_id,asset_symbol").execute()
+
+        return ObservationUpsertResult(inserted=inserted, updated=updated, observations=observations)
+
+    def _row_from_obs(self, o: Observation) -> Dict[str, Any]:
+        return {
+            "agent_id": o.agent_id,
+            "event_id": o.event_id,
+            "asset_symbol": o.asset_symbol,
+            "factor": (o.factor or ""),
+            "zi_score": o.zi_score,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
