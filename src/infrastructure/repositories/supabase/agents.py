@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from supabase import Client
 from src.domain.agents import Agent, CoverageProfile
 from src.domain.events import Event
+from src.domain.assets import Asset
 from src.repositories.agents import AgentRepository
 
 class SupabaseAgentRepository(AgentRepository):
@@ -46,9 +47,21 @@ class SupabaseAgentRepository(AgentRepository):
             return None
         return self._fetch_profile(key)
 
+    def get_agent_role(self, agent_id: str) -> Optional[str]:
+        res = self.sb.table(self.agent_table).select("coverage_profile_key").eq("agent_id", agent_id).limit(1).execute()
+        rows = res.data or []
+        if not rows:
+            return None
+        key = rows[0].get("coverage_profile_key")
+        if not key:
+            return None
+        prof = self._fetch_profile(key)
+        return (prof.role or "").strip() if prof else None
+
     def get_agent_categories(self, agent_id: str) -> List[str]:
         """Return the agent's coverage categories (normalized).
-        Reads the agent's coverage_profile_key and fetches categories from coverage_profiles.
+        Note: categories are stored with the coverage profile in the DB,
+        but are not part of the domain CoverageProfile anymore.
         """
         res = self.sb.table(self.agent_table).select("coverage_profile_key").eq("agent_id", agent_id).execute()
         rows = res.data or []
@@ -57,11 +70,14 @@ class SupabaseAgentRepository(AgentRepository):
         key = rows[0].get("coverage_profile_key")
         if not key:
             return []
-        prof = self._fetch_profile(key)
-        if not prof:
+        prof_row = self.sb.table(self.profile_table).select("categories").eq("profile_key", key).limit(1).execute()
+        prof_rows = prof_row.data or []
+        if not prof_rows:
             return []
-        # _profile_from_row already normalizes categories to UPPER+trim
-        return list(prof.categories or [])
+        cats = prof_rows[0].get("categories") or []
+        if isinstance(cats, str):
+            cats = [c.strip() for c in cats.split(",") if c.strip()]
+        return [self._norm_cat(c) for c in cats if self._norm_cat(c)]
 
     def get_agent_events(
         self,
@@ -70,11 +86,6 @@ class SupabaseAgentRepository(AgentRepository):
         window_end: datetime | None = None,
         limit: int | None = None,
     ) -> List[Event]:
-        profile = self.get_agent_profile(agent_id)
-        cats = [self._norm_cat(c) for c in (profile.categories if profile else []) if self._norm_cat(c)]
-        if not cats:
-            return []
-
         if window_start is not None:
             self._require_utc(window_start, "window_start")
         if window_end is not None:
@@ -82,24 +93,30 @@ class SupabaseAgentRepository(AgentRepository):
         if window_start is not None and window_end is not None and window_start > window_end:
             raise ValueError("window_start must be <= window_end")
 
-        q = self.sb.table(self.events_table).select("event_id, occurred_at, title, content, categories")
+        q = self.sb.table(self.events_table).select("event_id, occurred_at, title, content, categories, asset_symbol")
         if window_start is not None:
             q = q.gte("occurred_at", window_start.isoformat())
         if window_end is not None:
             q = q.lt("occurred_at", window_end.isoformat())
 
-        or_clauses = [f'categories.cs.["{c}"]' for c in cats]
-        q = q.or_(",".join(or_clauses)).order("occurred_at", desc=False)
+        # Only include events that have an associated asset
+        try:
+            q = q.not_.is_("asset_symbol", "null")
+        except Exception:
+            q = q.neq("asset_symbol", None)
+
+        q = q.order("occurred_at", desc=False)
         if limit is not None:
             q = q.limit(int(limit))
 
         res = q.execute()
-        rows = res.data or []
+        rows = (res.data or [])
+        rows = [r for r in rows if (r.get("asset_symbol") or "").strip()]
         return [self._event_from_row(r) for r in rows]
 
     def _fetch_profile(self, key: str) -> Optional[CoverageProfile]:
         res = self.sb.table(self.profile_table)\
-            .select("profile_key, name, description, categories")\
+            .select("profile_key, name, role")\
             .eq("profile_key", key).execute()
         rows = res.data or []
         if not rows:
@@ -110,7 +127,7 @@ class SupabaseAgentRepository(AgentRepository):
         if not keys:
             return {}
         res = self.sb.table(self.profile_table)\
-            .select("profile_key, name, description, categories")\
+            .select("profile_key, name, role")\
             .in_("profile_key", keys).execute()
         rows = res.data or []
         out: Dict[str, CoverageProfile] = {}
@@ -120,15 +137,10 @@ class SupabaseAgentRepository(AgentRepository):
         return out
 
     def _profile_from_row(self, row: Dict[str, Any]) -> CoverageProfile:
-        cats = row.get("categories") or []
-        if isinstance(cats, str):
-            cats = [c.strip() for c in cats.split(",") if c.strip()]
-        cats = [self._norm_cat(c) for c in cats if self._norm_cat(c)]
         return CoverageProfile(
             profile_key=row["profile_key"],
             name=row.get("name") or "",
-            description=row.get("description") or "",
-            categories=cats,
+            role=row.get("role") or "",
         )
 
     def _agent_from_row(self, row: Dict[str, Any], profile: CoverageProfile | None) -> Agent:
@@ -141,8 +153,7 @@ class SupabaseAgentRepository(AgentRepository):
                 else CoverageProfile(
                     profile_key=row.get("coverage_profile_key") or "",
                     name="",
-                    description="",
-                    categories=[],
+                    role="",
                 )
             ),
             is_active=bool(row.get("is_active", True)),
@@ -154,12 +165,14 @@ class SupabaseAgentRepository(AgentRepository):
         cats = row.get("categories") or []
         if isinstance(cats, str):
             cats = [c.strip() for c in cats.split(",") if c.strip()]
+        sym = (row.get("asset_symbol") or "").strip().upper()
         return Event(
             event_id=row["event_id"],
             occurred_at=ts,
             title=row.get("title") or "",
             content=row.get("content") or "",
             categories=cats,
+            asset=(Asset(symbol=sym) if sym else None),
         )
 
     def _norm_cat(self, s: str) -> str:
