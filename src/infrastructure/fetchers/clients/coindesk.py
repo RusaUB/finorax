@@ -1,7 +1,7 @@
 import requests
 from typing import Iterable, List
 from datetime import datetime, timezone
-from src.shared.utils.time import snap_to_interval
+from src.utils.time import snap_to_interval
 from src.application.ports import NewsFeedPort
 from src.application.ports import NewsItemDTO
 
