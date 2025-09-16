@@ -1,5 +1,6 @@
 from typing import List, Dict, Any
 from src.domain.events import Event
+from src.domain.assets import Asset
 from src.repositories.events import EventRepository, UpsertResult
 from supabase import Client
 from datetime import datetime, timezone, timedelta
@@ -27,7 +28,7 @@ class SupabaseEventRepository(EventRepository):
         if window_start is not None and window_end is not None and window_start > window_end:
             raise ValueError("window_start must be <= window_end")
 
-        q = self.sb.table(self.table).select("event_id, occurred_at, title, content, categories")
+        q = self.sb.table(self.table).select("event_id, occurred_at, title, content, categories, asset_symbol")
         if window_start is not None:
             q = q.gte("occurred_at", window_start.isoformat())
         if window_end is not None:
@@ -77,12 +78,14 @@ class SupabaseEventRepository(EventRepository):
         cats = row.get("categories") or []
         if isinstance(cats, str):
             cats = [c.strip() for c in cats.split(",") if c.strip()]
+        sym = (row.get("asset_symbol") or "").strip().upper()
         return Event(
             event_id=row["event_id"],
             occurred_at=ts,
             title=row.get("title") or "",
             content=row.get("content") or "",
             categories=cats,
+            asset=(Asset(symbol=sym) if sym else None),
         )
 
     def _row_from_event(self, e: Event) -> Dict[str, Any]:
@@ -95,6 +98,7 @@ class SupabaseEventRepository(EventRepository):
             "title":        e.title,
             "content":      e.content,
             "categories":   e.categories,
+            "asset_symbol": (e.asset.symbol if e.asset else None),
             "updated_at":   datetime.now(timezone.utc).isoformat()
         }
 
