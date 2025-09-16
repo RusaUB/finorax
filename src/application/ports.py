@@ -2,6 +2,8 @@ from typing import Protocol, Iterable, List
 from dataclasses import dataclass
 from datetime import datetime
 from dataclasses import field
+from src.domain.events import Event
+from src.domain.assets import Asset
 
 @dataclass
 class NewsItemDTO:
@@ -15,3 +17,62 @@ class NewsItemDTO:
 
 class NewsFeedPort(Protocol):
     def fetch(self, limit: int = 10, categories: List[str] = [], until: datetime | None = None) -> Iterable[NewsItemDTO]: ...
+
+
+# --- LLM factorization (DeepSeek via OpenAI-compatible async client) ---
+
+@dataclass
+class EventFactorDTO:
+    factor: str
+    zi_score: int
+
+
+class EventFactorizerPort(Protocol):
+    def factorize(
+        self,
+        event: Event,
+        max_tokens: int = 256,
+        agent_role: str | None = None,
+        indicators_context: str | None = None,
+    ) -> EventFactorDTO: ...
+
+
+@dataclass
+class SMACrossDTO:
+    fast: float
+    slow: float
+    prev_fast: float
+    prev_slow: float
+    crossed: str | None  
+
+class IndicatorServicePort(Protocol):
+    def get_rsi(
+        self,
+        asset: Asset,
+        at: datetime,
+        timeframe: str = "1h",
+        period: int = 14,
+        market: str | None = None,
+        quote: str = "USDT",
+    ) -> float: ...
+
+    def get_sma(
+        self,
+        asset: Asset,
+        at: datetime,
+        timeframe: str = "1h",
+        period: int = 14,
+        market: str | None = None,
+        quote: str = "USDT",
+    ) -> float: ...
+
+    def get_sma_cross(
+        self,
+        asset: Asset,
+        at: datetime,
+        timeframe: str = "1h",
+        fast_period: int = 50,
+        slow_period: int = 200,
+        market: str | None = None,
+        quote: str = "USDT",
+    ) -> SMACrossDTO: ...
