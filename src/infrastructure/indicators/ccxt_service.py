@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
-from src.application.ports import IndicatorServicePort
+from src.application.ports import IndicatorServicePort, PriceChangeDTO
 from src.domain.assets import Asset
 
 
@@ -111,6 +111,71 @@ class CcxtIndicatorService(IndicatorServicePort):
             return float(ts_to_rsi[closest_ts])
 
         return float(ts_to_rsi[target_ms])
+
+    def get_price_change(
+        self,
+        asset: Asset,
+        start: datetime,
+        end: datetime,
+        timeframe: str = "1h",
+        market: Optional[str] = None,
+        quote: str = "USDT",
+    ) -> PriceChangeDTO:
+        self._require_utc(start, "start")
+        self._require_utc(end, "end")
+        if end <= start:
+            raise ValueError("end must be greater than start")
+
+        symbol = market or f"{(asset.symbol or '').strip().upper()}/{quote.strip().upper()}"
+        print(symbol)
+        if symbol not in self.exchange.markets:
+            self.exchange.load_markets(True)
+            if symbol not in self.exchange.markets:
+                raise ValueError(f"Market symbol not found on exchange: {symbol}")
+
+        frame_ms = int(self.exchange.parse_timeframe(timeframe) * 1000)
+        if frame_ms <= 0:
+            raise ValueError(f"Invalid timeframe: {timeframe}")
+
+        start_ms = int(start.timestamp() * 1000)
+        end_ms = int(end.timestamp() * 1000)
+        start_target = ((start_ms - 1) // frame_ms) * frame_ms
+        end_target = ((end_ms - 1) // frame_ms) * frame_ms
+
+        # Fetch a window that fully covers [start_target, end_target]
+        # Add a couple of candles of padding in case exchange snaps boundaries oddly
+        padding = 2
+        since_ms = max(0, start_target - padding * frame_ms)
+        candles_needed = int((end_target - since_ms) // frame_ms) + 2 + padding
+        raw = self.exchange.fetch_ohlcv(symbol=symbol, timeframe=timeframe, since=since_ms, limit=candles_needed)
+        ohlcv = self._normalize_ohlcv(raw)
+
+        # Ensure we have the end candle; if missing, fetch forward starting at end_target
+        if not any(c.ts_ms == end_target for c in ohlcv):
+            more = self.exchange.fetch_ohlcv(symbol=symbol, timeframe=timeframe, since=end_target, limit=3)
+            ohlcv = self._merge_ohlcv(ohlcv, self._normalize_ohlcv(more))
+
+        # Find price at or before the target timestamps
+        start_point = self._price_at_or_before(ohlcv, start_target)
+        end_point = self._price_at_or_before(ohlcv, end_target)
+
+        if start_point is None or end_point is None:
+            raise ValueError("Insufficient OHLCV data to compute price change")
+
+        start_ts_ms, start_price = start_point
+        end_ts_ms, end_price = end_point
+
+        abs_change = float(end_price - start_price)
+        pct_change = float((abs_change / start_price) * 100.0) if start_price != 0 else 0.0
+
+        return PriceChangeDTO(
+            start_ts=datetime.fromtimestamp(start_ts_ms / 1000.0, tz=timezone.utc),
+            end_ts=datetime.fromtimestamp(end_ts_ms / 1000.0, tz=timezone.utc),
+            start_price=float(start_price),
+            end_price=float(end_price),
+            abs_change=abs_change,
+            pct_change=pct_change,
+        )
 
     def get_sma(
         self,
@@ -294,3 +359,17 @@ class CcxtIndicatorService(IndicatorServicePort):
             by_ts[c.ts_ms] = c
         out = [by_ts[k] for k in sorted(by_ts.keys())]
         return out
+
+    def _price_at_or_before(self, ohlcv: List[_OHLCV], target_ms: int) -> Optional[tuple[int, float]]:
+        # Assumes ohlcv is sorted ascending by ts
+        best_ts = None
+        best_close = None
+        for c in ohlcv:
+            if c.ts_ms <= target_ms:
+                best_ts = c.ts_ms
+                best_close = c.close
+            else:
+                break
+        if best_ts is None:
+            return None
+        return best_ts, float(best_close)
