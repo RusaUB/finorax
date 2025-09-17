@@ -45,6 +45,15 @@ class SMACrossDTO:
     prev_slow: float
     crossed: str | None  
 
+@dataclass
+class PriceChangeDTO:
+    start_ts: datetime
+    end_ts: datetime
+    start_price: float
+    end_price: float
+    abs_change: float
+    pct_change: float
+
 class IndicatorServicePort(Protocol):
     def get_rsi(
         self,
@@ -76,3 +85,13 @@ class IndicatorServicePort(Protocol):
         market: str | None = None,
         quote: str = "USDT",
     ) -> SMACrossDTO: ...
+
+    def get_price_change(
+        self,
+        asset: Asset,
+        start: datetime,
+        end: datetime,
+        timeframe: str = "1h",
+        market: str | None = None,
+        quote: str = "USDT",
+    ) -> 'PriceChangeDTO': ...
