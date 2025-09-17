@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
+import logging
 
 from src.application.ports import IndicatorServicePort, PriceChangeDTO
 from src.domain.assets import Asset
@@ -29,6 +30,7 @@ class CcxtIndicatorService(IndicatorServicePort):
     """
 
     def __init__(self, exchange_id: str = "binance", enable_rate_limit: bool = True) -> None:
+        self._log = logging.getLogger(__name__)
         try:
             import ccxt  # type: ignore
         except Exception as e:  # pragma: no cover - runtime dependency guard
@@ -40,6 +42,7 @@ class CcxtIndicatorService(IndicatorServicePort):
         self.exchange = getattr(ccxt, exchange_id)({"enableRateLimit": enable_rate_limit})
         # Load markets once to validate symbols
         self.exchange.load_markets()
+        self._log.info("Indicators: ccxt service initialized", extra={"exchange": exchange_id})
 
     def get_rsi(
         self,
@@ -55,6 +58,7 @@ class CcxtIndicatorService(IndicatorServicePort):
             raise ValueError("period must be positive")
 
         symbol = market or f"{(asset.symbol or '').strip().upper()}/{quote.strip().upper()}"
+        self._log.info("Indicators: computing RSI", extra={"symbol": symbol, "at": at.isoformat(), "timeframe": timeframe, "period": period})
         if symbol not in self.exchange.markets:
             # Attempt a reload in case of initial cache miss
             self.exchange.load_markets(True)
@@ -79,6 +83,7 @@ class CcxtIndicatorService(IndicatorServicePort):
         ohlcv = self._normalize_ohlcv(raw)
         if not ohlcv:
             raise ValueError("No OHLCV data returned")
+        self._log.debug("Indicators: OHLCV fetched", extra={"symbol": symbol, "count": len(ohlcv)})
 
         # Ensure we have the target candle in the set (some exchanges ignore `since` granularity)
         have_target = any(c.ts_ms == target_ms for c in ohlcv)
@@ -110,7 +115,9 @@ class CcxtIndicatorService(IndicatorServicePort):
             closest_ts = max(prior_ts)
             return float(ts_to_rsi[closest_ts])
 
-        return float(ts_to_rsi[target_ms])
+        value = float(ts_to_rsi[target_ms])
+        self._log.info("Indicators: RSI computed", extra={"symbol": symbol, "value": value})
+        return value
 
     def get_price_change(
         self,
@@ -127,7 +134,7 @@ class CcxtIndicatorService(IndicatorServicePort):
             raise ValueError("end must be greater than start")
 
         symbol = market or f"{(asset.symbol or '').strip().upper()}/{quote.strip().upper()}"
-        print(symbol)
+        self._log.info("Indicators: computing price change", extra={"symbol": symbol, "start": start.isoformat(), "end": end.isoformat(), "timeframe": timeframe})
         if symbol not in self.exchange.markets:
             self.exchange.load_markets(True)
             if symbol not in self.exchange.markets:
@@ -168,7 +175,7 @@ class CcxtIndicatorService(IndicatorServicePort):
         abs_change = float(end_price - start_price)
         pct_change = float((abs_change / start_price) * 100.0) if start_price != 0 else 0.0
 
-        return PriceChangeDTO(
+        dto = PriceChangeDTO(
             start_ts=datetime.fromtimestamp(start_ts_ms / 1000.0, tz=timezone.utc),
             end_ts=datetime.fromtimestamp(end_ts_ms / 1000.0, tz=timezone.utc),
             start_price=float(start_price),
@@ -176,6 +183,8 @@ class CcxtIndicatorService(IndicatorServicePort):
             abs_change=abs_change,
             pct_change=pct_change,
         )
+        self._log.info("Indicators: price change computed", extra={"symbol": symbol, "pct_change": dto.pct_change})
+        return dto
 
     def get_sma(
         self,
@@ -191,6 +200,7 @@ class CcxtIndicatorService(IndicatorServicePort):
             raise ValueError("period must be positive")
 
         symbol = market or f"{(asset.symbol or '').strip().upper()}/{quote.strip().upper()}"
+        self._log.info("Indicators: computing SMA", extra={"symbol": symbol, "at": at.isoformat(), "timeframe": timeframe, "period": period})
         if symbol not in self.exchange.markets:
             self.exchange.load_markets(True)
             if symbol not in self.exchange.markets:
@@ -218,7 +228,9 @@ class CcxtIndicatorService(IndicatorServicePort):
         sma = self._sma_at_index(closes, period, idx)
         if sma is None:
             raise ValueError("SMA not available for the requested time")
-        return float(sma)
+        value = float(sma)
+        self._log.info("Indicators: SMA computed", extra={"symbol": symbol, "value": value})
+        return value
 
     def get_sma_cross(
         self,
@@ -239,6 +251,7 @@ class CcxtIndicatorService(IndicatorServicePort):
             raise ValueError("fast_period must be less than slow_period")
 
         symbol = market or f"{(asset.symbol or '').strip().upper()}/{quote.strip().upper()}"
+        self._log.info("Indicators: computing SMA cross", extra={"symbol": symbol, "at": at.isoformat(), "timeframe": timeframe, "fast": fast_period, "slow": slow_period})
         if symbol not in self.exchange.markets:
             self.exchange.load_markets(True)
             if symbol not in self.exchange.markets:
@@ -280,13 +293,15 @@ class CcxtIndicatorService(IndicatorServicePort):
         else:
             crossed = None
 
-        return SMACrossDTO(
+        dto = SMACrossDTO(
             fast=float(fast_curr),
             slow=float(slow_curr),
             prev_fast=float(fast_prev),
             prev_slow=float(slow_prev),
             crossed=crossed,
         )
+        self._log.info("Indicators: SMA cross computed", extra={"symbol": symbol, "crossed": crossed})
+        return dto
 
     # --- helpers ---
     def _normalize_ohlcv(self, rows: List[List[float]]) -> List[_OHLCV]:

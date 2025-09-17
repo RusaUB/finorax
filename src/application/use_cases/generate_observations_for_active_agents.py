@@ -1,8 +1,7 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Optional
+import logging
 
 from src.domain.observations import Observation
 from src.repositories.agents import AgentRepository
@@ -30,6 +29,7 @@ class GenerateObservationsForActiveAgents:
         self.observations = observations
         self.factorizer = factorizer
         self.indicators = indicators
+        self._log = logging.getLogger(__name__)
 
     def run(
         self,
@@ -45,7 +45,9 @@ class GenerateObservationsForActiveAgents:
         if window_start is not None and window_end is not None and window_start > window_end:
             raise ValueError("window_start must be <= window_end")
 
+        self._log.info("GenerateObs: listing active agents")
         active_agents = self.agents.list_active()
+        self._log.info("GenerateObs: active agents fetched", extra={"count": len(active_agents)})
         observations: List[Observation] = []
         total_events = 0
 
@@ -57,6 +59,7 @@ class GenerateObservationsForActiveAgents:
                 window_end=window_end,
                 limit=per_agent_limit,
             )
+            self._log.info("GenerateObs: events fetched for agent", extra={"agent_id": a.agent_id, "count": len(events)})
             # get_agent_events already returns only events with assets
             for e in events:
                 total_events += 1
@@ -83,7 +86,9 @@ class GenerateObservationsForActiveAgents:
                     )
                 )
 
+        self._log.info("GenerateObs: upserting observations", extra={"count": len(observations)})
         upserted = self.observations.upsert_many(observations)
+        self._log.info("GenerateObs: upsert completed", extra={"inserted": upserted.inserted, "updated": upserted.updated})
         return GenerateObservationsResult(
             total_agents=len(active_agents),
             total_events=total_events,

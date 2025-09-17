@@ -1,4 +1,5 @@
 from typing import List, Dict, Any
+import logging
 from src.domain.events import Event
 from src.domain.assets import Asset
 from src.repositories.events import EventRepository, UpsertResult
@@ -9,6 +10,7 @@ class SupabaseEventRepository(EventRepository):
     def __init__(self, sb_client: Client, table: str = "events"):
         self.sb = sb_client
         self.table = table
+        self._log = logging.getLogger(__name__)
 
     def get_events_by_categories(
         self,
@@ -41,8 +43,10 @@ class SupabaseEventRepository(EventRepository):
         if limit is not None:
             q = q.limit(int(limit))
 
+        self._log.info("EventsRepo: fetching by categories", extra={"cats": cats, "window_start": window_start.isoformat() if window_start else None, "window_end": window_end.isoformat() if window_end else None, "limit": limit})
         res = q.execute()
         rows = res.data or []
+        self._log.info("EventsRepo: fetched rows", extra={"count": len(rows)})
         return [self._event_from_row(r) for r in rows]
 
     def upsert_many(self, events: List[Event]) -> UpsertResult:
@@ -66,7 +70,7 @@ class SupabaseEventRepository(EventRepository):
 
         if update_rows:
             self.sb.table(self.table).upsert(update_rows, on_conflict="event_id").execute()
-
+        self._log.info("EventsRepo: upsert_many completed", extra={"inserted": inserted, "updated": updated})
         return UpsertResult(inserted=inserted, updated=updated, events=events)
 
     def _norm_cat(self, s: str) -> str:

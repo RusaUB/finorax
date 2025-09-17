@@ -1,4 +1,5 @@
 from typing import Optional, List, Dict, Any
+import logging
 from datetime import datetime, timedelta
 from supabase import Client
 from src.domain.agents import Agent, CoverageProfile
@@ -12,6 +13,7 @@ class SupabaseAgentRepository(AgentRepository):
         self.agent_table = agent_table
         self.profile_table = profile_table
         self.events_table = events_table
+        self._log = logging.getLogger(__name__)
 
     def get(self, agent_id: str) -> Optional[Agent]:
         res = self.sb.table(self.agent_table)\
@@ -109,9 +111,11 @@ class SupabaseAgentRepository(AgentRepository):
         if limit is not None:
             q = q.limit(int(limit))
 
+        self._log.info("AgentRepo: fetching agent events with assets", extra={"agent_id": agent_id, "window_start": window_start.isoformat() if window_start else None, "window_end": window_end.isoformat() if window_end else None, "limit": limit})
         res = q.execute()
         rows = (res.data or [])
         rows = [r for r in rows if (r.get("asset_symbol") or "").strip()]
+        self._log.info("AgentRepo: fetched agent events", extra={"agent_id": agent_id, "count": len(rows)})
         return [self._event_from_row(r) for r in rows]
 
     def _fetch_profile(self, key: str) -> Optional[CoverageProfile]:

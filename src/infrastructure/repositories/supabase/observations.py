@@ -1,8 +1,6 @@
-from __future__ import annotations
-
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
+import logging
 
 from supabase import Client
 
@@ -11,9 +9,11 @@ from src.repositories.observations import ObservationRepository, ObservationUpse
 
 
 class SupabaseObservationRepository(ObservationRepository):
-    def __init__(self, sb_client: Client, table: str = "observations") -> None:
+    def __init__(self, sb_client: Client, table: str = "observations", events_table: str = "events") -> None:
         self.sb = sb_client
         self.table = table
+        self.events_table = events_table
+        self._log = logging.getLogger(__name__)
 
     def upsert_many(self, observations: List[Observation]) -> ObservationUpsertResult:
         if not observations:
@@ -48,9 +48,8 @@ class SupabaseObservationRepository(ObservationRepository):
         if new_rows:
             self.sb.table(self.table).insert(new_rows).execute()
         if update_rows:
-            # Composite conflict target: ensure a unique constraint exists on (agent_id, event_id, asset_symbol)
             self.sb.table(self.table).upsert(update_rows, on_conflict="agent_id,event_id,asset_symbol").execute()
-
+        self._log.info("ObservationsRepo: upsert_many", extra={"inserted": inserted, "updated": updated})
         return ObservationUpsertResult(inserted=inserted, updated=updated, observations=observations)
 
     def _row_from_obs(self, o: Observation) -> Dict[str, Any]:
@@ -71,19 +70,55 @@ class SupabaseObservationRepository(ObservationRepository):
         if window_start > window_end:
             raise ValueError("window_start must be <= window_end")
 
-        q = (
+        self._log.info("ObservationsRepo: listing observations by events window", extra={"start": window_start.isoformat(), "end": window_end.isoformat()})
+        ev = (
             self.sb
-            .table(self.table)
-            .select("agent_id, event_id, asset_symbol, factor, zi_score, updated_at")
-            .gte("updated_at", window_start.isoformat())
-            .lt("updated_at", window_end.isoformat())
-        )
-        res = q.execute()
-        rows = res.data or []
+            .table(self.events_table)
+            .select("event_id")
+            .gte("occurred_at", window_start.isoformat())
+            .lt("occurred_at", window_end.isoformat())
+        ).execute()
+        event_ids = [r.get("event_id") for r in (ev.data or []) if r.get("event_id")]
+        if not event_ids:
+            self._log.info("ObservationsRepo: no events in window", extra={"start": window_start.isoformat(), "end": window_end.isoformat()})
+            return []
+
+        rows: List[Dict[str, Any]] = []
+        id_field: str | None = None
+        try:
+            res = (
+                self.sb
+                .table(self.table)
+                .select("observation_id, agent_id, event_id, asset_symbol, factor, zi_score, updated_at")
+                .in_("event_id", event_ids)
+            ).execute()
+            rows = res.data or []
+            id_field = "observation_id"
+        except Exception:
+            try:
+                res = (
+                    self.sb
+                    .table(self.table)
+                    .select("id, agent_id, event_id, asset_symbol, factor, zi_score, updated_at")
+                    .in_("event_id", event_ids)
+                ).execute()
+                rows = res.data or []
+                id_field = "id"
+            except Exception:
+                res = (
+                    self.sb
+                    .table(self.table)
+                    .select("agent_id, event_id, asset_symbol, factor, zi_score, updated_at")
+                    .in_("event_id", event_ids)
+                ).execute()
+                rows = res.data or []
+                id_field = None
+        self._log.info("ObservationsRepo: fetched observations", extra={"count": len(rows)})
         out: List[Observation] = []
         for r in rows:
             out.append(
                 Observation(
+                    id=(str(r.get(id_field)) if id_field and r.get(id_field) is not None else None),
                     agent_id=r.get("agent_id"),
                     event_id=r.get("event_id"),
                     asset_symbol=r.get("asset_symbol"),

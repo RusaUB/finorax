@@ -1,3 +1,4 @@
+import logging
 from src.application.ports import EventFactorizerPort, EventFactorDTO
 from src.domain.events import Event
 from src.utils.base import extract_json_block
@@ -8,8 +9,10 @@ class DeepseekClient(EventFactorizerPort):
     def __init__(self, model: str, api_key: str):
         self.model = model
         self.client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        self._log = logging.getLogger(__name__)
 
     def factorize(self, event: Event, max_tokens: int = 256, agent_role: str | None = None, indicators_context: str | None = None) -> EventFactorDTO:
+        self._log.info("LLM: factorize start", extra={"event_id": event.event_id, "asset": (event.asset.symbol if getattr(event, 'asset', None) else None), "max_tokens": max_tokens})
         system_prompt = (
             "You are an AI assistant that analyzes a news event and returns a JSON object. "
             "Return ONLY a single valid JSON object with exactly two keys: 'factor' and 'zi_score'. "
@@ -63,13 +66,15 @@ class DeepseekClient(EventFactorizerPort):
             try:
                 zi_score = int(float(zi_score))
             except Exception:
-                print("'zi_score' must be an integer in [-2,2]")
+                self._log.warning("LLM: zi_score not integer", extra={"event_id": event.event_id, "zi_score": zi_score})
                 zi_score = None
         else:
             zi_score = None
 
         if isinstance(zi_score, int) and (zi_score < -2 or zi_score > 2):
-            print("'zi_score' out of allowed range [-2,2]")
+            self._log.warning("LLM: zi_score out of range", extra={"event_id": event.event_id, "zi_score": zi_score})
             zi_score = None
 
-        return EventFactorDTO(factor=(factor or "").strip(), zi_score=zi_score)
+        result = EventFactorDTO(factor=(factor or "").strip(), zi_score=zi_score)
+        self._log.info("LLM: factorize done", extra={"event_id": event.event_id, "has_factor": bool(result.factor), "zi_score": result.zi_score})
+        return result
