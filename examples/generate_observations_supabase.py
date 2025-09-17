@@ -1,4 +1,5 @@
 import os
+import logging
 from datetime import datetime, timedelta, timezone
 
 from supabase import Client, create_client
@@ -28,6 +29,7 @@ def parse_iso_utc(value: str | None):
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
     sb = make_supabase()
     agents_repo = SupabaseAgentRepository(sb_client=sb)
     observations_repo = SupabaseObservationRepository(sb_client=sb)
