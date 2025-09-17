@@ -62,3 +62,33 @@ class SupabaseObservationRepository(ObservationRepository):
             "zi_score": o.zi_score,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
+
+    def list_in_window(self, window_start: datetime, window_end: datetime) -> List[Observation]:
+        if window_start.tzinfo is None or window_start.utcoffset() is None:
+            raise ValueError("window_start must be timezone-aware UTC")
+        if window_end.tzinfo is None or window_end.utcoffset() is None:
+            raise ValueError("window_end must be timezone-aware UTC")
+        if window_start > window_end:
+            raise ValueError("window_start must be <= window_end")
+
+        q = (
+            self.sb
+            .table(self.table)
+            .select("agent_id, event_id, asset_symbol, factor, zi_score, updated_at")
+            .gte("updated_at", window_start.isoformat())
+            .lt("updated_at", window_end.isoformat())
+        )
+        res = q.execute()
+        rows = res.data or []
+        out: List[Observation] = []
+        for r in rows:
+            out.append(
+                Observation(
+                    agent_id=r.get("agent_id"),
+                    event_id=r.get("event_id"),
+                    asset_symbol=r.get("asset_symbol"),
+                    factor=r.get("factor") or "",
+                    zi_score=r.get("zi_score"),
+                )
+            )
+        return out
