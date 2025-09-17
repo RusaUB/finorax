@@ -26,8 +26,8 @@ class Round:
 @dataclass(frozen=True)
 class RoundAgentScore:
     agent_id: str
+    observation_id: str
     score: float
-    observations_count: int
 
 
 @dataclass(frozen=True)

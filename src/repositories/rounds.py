@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, List
 
 from src.domain.rounds import RoundEvaluation
 
@@ -15,3 +15,4 @@ class SaveRoundResult:
 
 class RoundRepository(Protocol):
     def save_evaluation(self, evaluation: RoundEvaluation) -> SaveRoundResult: ...
+    def existing_round_keys(self, keys: List[str]) -> set[str]: ...
