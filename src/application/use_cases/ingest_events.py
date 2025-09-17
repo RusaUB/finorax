@@ -1,4 +1,5 @@
 from typing import List
+import logging
 from datetime import datetime
 from src.domain.events import Event
 from src.application.ports import NewsFeedPort
@@ -12,9 +13,12 @@ class IngestEvents:
         self.feed = feed
         self.events = events
         self._asset_extractor = AssetExtractor.from_repository(assets)
+        self._log = logging.getLogger(__name__)
     
     def run(self, limit: int = 10, categories: List[str] | None = None, until: datetime | None = None) -> UpsertResult:
-        items = self.feed.fetch(limit=limit, categories=categories or [], until=until)
+        self._log.info("IngestEvents: fetching items", extra={"limit": limit, "categories": categories or [], "until": until.isoformat() if until else None})
+        items = list(self.feed.fetch(limit=limit, categories=categories or [], until=until))
+        self._log.info("IngestEvents: items fetched", extra={"count": len(items)})
         to_upsert: List[Event] = []
 
         for dto in items:
@@ -29,6 +33,7 @@ class IngestEvents:
             )
 
             symbols = sorted(self._asset_extractor.extract_symbols(base_event))
+            self._log.debug("IngestEvents: extracted symbols", extra={"event_id": base_event.event_id, "symbols": symbols})
 
             if not symbols:
                 # No assets detected: keep original event as-is
@@ -55,4 +60,7 @@ class IngestEvents:
                     )
                 )
 
-        return self.events.upsert_many(events=to_upsert)
+        self._log.info("IngestEvents: upserting events", extra={"count": len(to_upsert)})
+        res = self.events.upsert_many(events=to_upsert)
+        self._log.info("IngestEvents: upsert completed", extra={"inserted": res.inserted, "updated": res.updated})
+        return res
