@@ -25,6 +25,7 @@ class NewsFeedPort(Protocol):
 class EventFactorDTO:
     factor: str
     zi_score: int
+    confidence: int | None = None
 
 
 class EventFactorizerPort(Protocol):

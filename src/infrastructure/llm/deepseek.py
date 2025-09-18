@@ -14,11 +14,12 @@ class DeepseekClient(EventFactorizerPort):
     def factorize(self, event: Event, max_tokens: int = 256, agent_role: str | None = None, indicators_context: str | None = None) -> EventFactorDTO:
         self._log.info("LLM: factorize start", extra={"event_id": event.event_id, "asset": (event.asset.symbol if getattr(event, 'asset', None) else None), "max_tokens": max_tokens})
         system_prompt = (
-            "You are an AI assistant that analyzes a news event and returns a JSON object. "
-            "Return ONLY a single valid JSON object with exactly two keys: 'factor' and 'zi_score'. "
-            "- 'factor': a concise summary (1–2 sentences) of the news and its likely effect on the asset's price. The summary must always point to the asset. "
-            "- 'zi_score': an integer in [-2, -1, 0, 1, 2] indicating expected price impact "
-            "(2=strong positive, 1=moderate positive, 0=neutral, -1=moderate negative, -2=strong negative). "
+            "You are an AI assistant that analyzes an event and returns a JSON object. "
+            "Return ONLY a single valid JSON object with exactly three keys: 'factor', 'zi_score', and 'confidence'. "
+            "- 'factor': a concise summary (1–2 sentences) of the driver and its likely effect on the asset's price. Always reference the asset explicitly. "
+            "- 'zi_score': an integer in [-2,-1,0,1,2] indicating expected price impact (2=strong positive, 1=moderate positive, 0=neutral, -1=moderate negative, -2=strong negative). "
+            "- 'confidence': a discrete integer in [0..10] representing how confident you are in your assessment given the agent role and any provided indicators snapshot (0=very uncertain, 10=very certain). "
+            "Calibrate confidence using: directness/relevance to the asset, clarity/magnitude of the driver, source credibility and recency, and alignment/consensus of indicators if provided. Under ambiguity or missing signals, lower confidence. "
             "Do not include any text outside the JSON."
         )
         # Add agent role and indicators snapshot to the system prompt if provided
@@ -57,6 +58,7 @@ class DeepseekClient(EventFactorizerPort):
 
         factor = parsed.get("factor")
         zi_score = parsed.get("zi_score")
+        confidence = parsed.get("confidence")
 
         if not isinstance(factor, str) or not factor.strip():
             print("LLM output missing valid 'factor' string")
@@ -75,6 +77,20 @@ class DeepseekClient(EventFactorizerPort):
             self._log.warning("LLM: zi_score out of range", extra={"event_id": event.event_id, "zi_score": zi_score})
             zi_score = None
 
-        result = EventFactorDTO(factor=(factor or "").strip(), zi_score=zi_score)
-        self._log.info("LLM: factorize done", extra={"event_id": event.event_id, "has_factor": bool(result.factor), "zi_score": result.zi_score})
+        # Parse and bound 'confidence' to [0..10]
+        if isinstance(confidence, (int, float, str)) and str(confidence).strip() != "":
+            try:
+                confidence = int(float(confidence))
+            except Exception:
+                self._log.warning("LLM: confidence not integer", extra={"event_id": event.event_id, "confidence": confidence})
+                confidence = None
+        else:
+            confidence = None
+
+        if isinstance(confidence, int) and (confidence < 0 or confidence > 10):
+            self._log.warning("LLM: confidence out of range", extra={"event_id": event.event_id, "confidence": confidence})
+            confidence = None
+
+        result = EventFactorDTO(factor=(factor or "").strip(), zi_score=zi_score, confidence=confidence)
+        self._log.info("LLM: factorize done", extra={"event_id": event.event_id, "has_factor": bool(result.factor), "zi_score": result.zi_score, "confidence": result.confidence})
         return result

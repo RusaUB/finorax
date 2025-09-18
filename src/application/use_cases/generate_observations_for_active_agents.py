@@ -83,6 +83,7 @@ class GenerateObservationsForActiveAgents:
                         asset_symbol=(e.asset.symbol if e.asset else None),
                         factor=res.factor or "",
                         zi_score=res.zi_score,
+                        confidence=getattr(res, 'confidence', None),
                     )
                 )
 

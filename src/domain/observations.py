@@ -9,4 +9,5 @@ class Observation:
     asset_symbol: Optional[str] = None
     factor: str = ""
     zi_score: Optional[int] = None
+    confidence: Optional[int] = None
     id: Optional[str] = None

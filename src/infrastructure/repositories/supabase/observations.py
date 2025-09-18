@@ -59,6 +59,7 @@ class SupabaseObservationRepository(ObservationRepository):
             "asset_symbol": o.asset_symbol,
             "factor": (o.factor or ""),
             "zi_score": o.zi_score,
+            "confidence": o.confidence,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -85,34 +86,32 @@ class SupabaseObservationRepository(ObservationRepository):
 
         rows: List[Dict[str, Any]] = []
         id_field: str | None = None
-        try:
-            res = (
-                self.sb
-                .table(self.table)
-                .select("observation_id, agent_id, event_id, asset_symbol, factor, zi_score, updated_at")
-                .in_("event_id", event_ids)
-            ).execute()
-            rows = res.data or []
-            id_field = "observation_id"
-        except Exception:
+        selects = [
+            ("observation_id", True),
+            ("observation_id", False),
+            ("id", True),
+            ("id", False),
+            (None, True),
+            (None, False),
+        ]
+        base_fields_with_conf = "agent_id, event_id, asset_symbol, factor, zi_score, confidence, updated_at"
+        base_fields_no_conf = "agent_id, event_id, asset_symbol, factor, zi_score, updated_at"
+        for id_col, with_conf in selects:
+            fields = base_fields_with_conf if with_conf else base_fields_no_conf
+            if id_col:
+                fields = f"{id_col}, " + fields
             try:
                 res = (
                     self.sb
                     .table(self.table)
-                    .select("id, agent_id, event_id, asset_symbol, factor, zi_score, updated_at")
+                    .select(fields)
                     .in_("event_id", event_ids)
                 ).execute()
                 rows = res.data or []
-                id_field = "id"
+                id_field = id_col
+                break
             except Exception:
-                res = (
-                    self.sb
-                    .table(self.table)
-                    .select("agent_id, event_id, asset_symbol, factor, zi_score, updated_at")
-                    .in_("event_id", event_ids)
-                ).execute()
-                rows = res.data or []
-                id_field = None
+                continue
         self._log.info("ObservationsRepo: fetched observations", extra={"count": len(rows)})
         out: List[Observation] = []
         for r in rows:
@@ -124,6 +123,7 @@ class SupabaseObservationRepository(ObservationRepository):
                     asset_symbol=r.get("asset_symbol"),
                     factor=r.get("factor") or "",
                     zi_score=r.get("zi_score"),
+                    confidence=r.get("confidence"),
                 )
             )
         return out
