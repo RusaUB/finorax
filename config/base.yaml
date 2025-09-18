@@ -30,8 +30,14 @@ generation:
   max_tokens: 256
 
 backfill:
-  n_rounds: 2
+  n_rounds: 3
   timeframe: 1h
   ingest_limit: 2
   quote: USDT
-  min_events_per_round: 2
+  min_events_per_round: 0
+
+cron:
+  freq: 1h
+  eager_first_run: false
+  jitter_seconds: 0
+  ingest_before_backfill: true
