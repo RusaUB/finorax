@@ -49,6 +49,38 @@ class SupabaseEventRepository(EventRepository):
         self._log.info("EventsRepo: fetched rows", extra={"count": len(rows)})
         return [self._event_from_row(r) for r in rows]
 
+    def count_in_window(
+        self,
+        window_start: datetime,
+        window_end: datetime,
+        with_asset_only: bool = True,
+    ) -> int:
+        self._require_utc(window_start, "window_start")
+        self._require_utc(window_end, "window_end")
+        if window_start > window_end:
+            raise ValueError("window_start must be <= window_end")
+
+        # Prefer exact count if supported; fallback to length of selected IDs
+        try:
+            q = (
+                self.sb
+                .table(self.table)
+                .select("event_id")
+                .gte("occurred_at", window_start.isoformat())
+                .lt("occurred_at", window_end.isoformat())
+            )
+            if with_asset_only:
+                try:
+                    q = q.not_.is_("asset_symbol", "null")
+                except Exception:
+                    q = q.neq("asset_symbol", None)
+            res = q.execute()
+            rows = res.data or []
+            return len(rows)
+        except Exception:
+            # Conservative fallback
+            return 0
+
     def upsert_many(self, events: List[Event]) -> UpsertResult:
         if not events:
             return UpsertResult(inserted=0, updated=0, events=[])

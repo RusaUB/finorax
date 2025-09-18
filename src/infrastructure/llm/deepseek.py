@@ -6,9 +6,9 @@ from src.utils.base import extract_json_block
 from openai import OpenAI
 
 class DeepseekClient(EventFactorizerPort):
-    def __init__(self, model: str, api_key: str):
+    def __init__(self, model: str, api_key: str, base_url: str = "https://api.deepseek.com"):
         self.model = model
-        self.client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
         self._log = logging.getLogger(__name__)
 
     def factorize(self, event: Event, max_tokens: int = 256, agent_role: str | None = None, indicators_context: str | None = None) -> EventFactorDTO:

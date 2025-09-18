@@ -11,6 +11,13 @@ class EventRepository(Protocol):
         window_end: datetime | None = None,
         limit: int | None = None,
     ) -> List[Event]: ...
+
+    def count_in_window(
+        self,
+        window_start: datetime,
+        window_end: datetime,
+        with_asset_only: bool = True,
+    ) -> int: ...
     
     def upsert_many(
             self, 
