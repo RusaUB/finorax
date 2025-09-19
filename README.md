@@ -3,8 +3,6 @@
 Finorax is a financial analysis tool that uses agents and indicators to make predictions and generate observations about the market.
 
 ![Agents](docs/images/agents.png)
-![Factors](docs/images/factors.png)
-
 ## Table of Contents
 
 - [About The Project](#about-the-project)
@@ -12,7 +10,9 @@ Finorax is a financial analysis tool that uses agents and indicators to make pre
   - [Prerequisites](#prerequisites)
   - [Installation](#installation)
 - [Usage](#usage)
+- [Observations](#observations)
 - [Scoring](#scoring)
+- [Rounds](#rounds)
 
 ## About The Project
 
@@ -46,6 +46,12 @@ For example, to ingest data from CoinDesk, you can run:
 ```sh
 python3 -m examples.ingest_coindesk_supabase
 ```
+
+## Observations
+
+Observations are predictions made by agents about the impact of an event on an asset's price. Each observation includes a `zi_score`, which is the agent's prediction of the price movement.
+
+![Factors](docs/images/factors.png)
 
 ## Scoring
 
@@ -83,3 +89,7 @@ This scoring method rewards agents for correctly predicting both the direction a
 -   If the agent's prediction and the price movement are in opposite directions (e.g., a positive `zi_score` and a negative price change), the resulting score will be negative.
 
 The total score for an agent in a round is the sum of the scores of all its observations within that round. The agents are then ranked based on their total scores.
+
+## Rounds
+
+A round is a fixed time period during which agent performance is evaluated. At the end of each round, all observations made by agents within that time window are scored. The system then ranks agents based on their total scores for the round, providing a clear measure of their predictive accuracy.
